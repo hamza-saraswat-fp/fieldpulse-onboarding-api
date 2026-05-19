@@ -90,7 +90,12 @@ export async function POST(request: Request) {
 
   const salesforceData = transformSalesforceBody(input as Record<string, unknown>)
   const accessToken = crypto.randomUUID()
-  const customFormsEnabled = deriveCustomFormsEnabled(input.productsEnabled)
+  // Prefer the explicit boolean from the new flat-boolean shape; fall back
+  // to deriving from the legacy productsEnabled string.
+  const customFormsEnabled =
+    typeof input.customFormsEnabled === 'boolean'
+      ? input.customFormsEnabled
+      : deriveCustomFormsEnabled(input.productsEnabled)
 
   const { data: session, error: insertError } = await supabase
     .from('wizard_sessions')

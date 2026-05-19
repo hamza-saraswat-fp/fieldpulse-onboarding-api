@@ -1,35 +1,6 @@
 import { INDUSTRIES } from '@/lib/constants/industries'
 import { sanitizeString } from '@/lib/utils/sanitize'
 
-export const companySizeOptions = [
-  '1-2',
-  '3-5',
-  '6-10',
-  '11-20',
-  '21-30',
-  '31-50',
-  '51+',
-] as const
-
-type CompanySize = (typeof companySizeOptions)[number]
-
-const SIZE_RANGES: [number, number, CompanySize][] = [
-  [1, 2, '1-2'],
-  [3, 5, '3-5'],
-  [6, 10, '6-10'],
-  [11, 20, '11-20'],
-  [21, 30, '21-30'],
-  [31, 50, '31-50'],
-]
-
-export function mapEmployeeCountToSize(n: number): CompanySize | undefined {
-  if (n < 1) return undefined
-  for (const [min, max, size] of SIZE_RANGES) {
-    if (n >= min && n <= max) return size
-  }
-  return '51+'
-}
-
 const CURRENCY_MAP: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -72,7 +43,7 @@ export function deriveCustomFormsEnabled(productsEnabled?: string): boolean {
     .includes('custom forms')
 }
 
-const SF_PARAM_KEYS = [
+const STRING_FIELDS = [
   'salesforceAccountId',
   'companyId',
   'companyName',
@@ -87,68 +58,97 @@ const SF_PARAM_KEYS = [
   'phone',
   'industry',
   'industryOther',
+  'website',
+  'currencyCode',
+  'supportType',
+  'primaryLanguage',
+  'salesSegment',
   'numberOfEmployees',
+  'productsEnabled',
+  'fpPaymentsProvider',
+] as const
+
+const NUMBER_FIELDS = [
   'userCount',
   'fullUsers',
   'limitedAgents',
-  'productsEnabled',
-  'website',
-  'currencyCode',
   'contractedSeats',
-  'dataMigration',
-  'supportType',
   'engageContractedSeats',
-  'primaryLanguage',
-  'salesSegment',
 ] as const
 
+const BOOLEAN_FIELDS = [
+  'dataMigration',
+  'customerCommunicationEnabled',
+  'quickbooksOnlineEnabled',
+  'quickbooksDesktopEnabled',
+  'fpPaymentsEnabled',
+  'customFormsEnabled',
+  'engageEnabled',
+] as const
+
+/**
+ * Transform a validated JSON body from POST /api/salesforce/generate-link
+ * into the salesforce_data blob stored on the wizard_sessions row.
+ *
+ * Preserves native types — booleans stay boolean, numbers stay number.
+ * String fields are sanitized. Adds derivations (currencySymbol, companySize,
+ * matched industry, customFormsEnabled fallback).
+ */
 export function transformSalesforceBody(
   body: Record<string, unknown>
 ): Record<string, unknown> {
-  const raw: Record<string, string> = {}
-  for (const key of SF_PARAM_KEYS) {
+  const data: Record<string, unknown> = {}
+
+  for (const key of STRING_FIELDS) {
     const val = body[key]
-    if (val !== undefined && val !== null && val !== '') {
-      raw[key] = sanitizeString(String(val))
+    if (typeof val === 'string' && val !== '') {
+      data[key] = sanitizeString(val)
     }
   }
 
-  if (Object.keys(raw).length === 0) return {}
-
-  return applyTransforms(raw)
-}
-
-function applyTransforms(raw: Record<string, string>): Record<string, unknown> {
-  const data: Record<string, unknown> = { ...raw }
-
-  if (raw.numberOfEmployees) {
-    const n = parseInt(raw.numberOfEmployees, 10)
-    if (!isNaN(n)) {
-      data.companySize = mapEmployeeCountToSize(n)
+  for (const key of NUMBER_FIELDS) {
+    const val = body[key]
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      data[key] = val
     }
   }
 
-  if (raw.currencyCode) {
-    data.currencySymbol = mapCurrencyCodeToSymbol(raw.currencyCode)
-  }
-
-  if (raw.industry || raw.industryOther) {
-    data.industry = matchIndustry(raw.industry, raw.industryOther)
-  }
-
-  data.customFormsEnabled = deriveCustomFormsEnabled(raw.productsEnabled)
-
-  for (const key of [
-    'userCount',
-    'fullUsers',
-    'limitedAgents',
-    'contractedSeats',
-    'engageContractedSeats',
-  ] as const) {
-    if (raw[key]) {
-      const n = parseInt(raw[key], 10)
-      if (!isNaN(n)) data[key] = n
+  for (const key of BOOLEAN_FIELDS) {
+    const val = body[key]
+    if (typeof val === 'boolean') {
+      data[key] = val
     }
+  }
+
+  // Derivations
+
+  // companySize: SF picklist string already matches the wizard's enum format.
+  // Pass through directly so the wizard UI can prefill without a second lookup.
+  if (typeof data.numberOfEmployees === 'string') {
+    data.companySize = data.numberOfEmployees
+  }
+
+  // currencyCode -> currencySymbol for UI rendering
+  if (typeof data.currencyCode === 'string') {
+    data.currencySymbol = mapCurrencyCodeToSymbol(data.currencyCode)
+  }
+
+  // industry / industryOther -> match against the wizard's industry list
+  if (data.industry || data.industryOther) {
+    const matched = matchIndustry(
+      typeof data.industry === 'string' ? data.industry : undefined,
+      typeof data.industryOther === 'string' ? data.industryOther : undefined
+    )
+    if (matched) data.industry = matched
+  }
+
+  // customFormsEnabled: prefer the explicit boolean. If not provided, fall
+  // back to deriving from the legacy productsEnabled string.
+  if (
+    typeof data.customFormsEnabled !== 'boolean' &&
+    typeof data.productsEnabled === 'string'
+  ) {
+    data.customFormsEnabled = deriveCustomFormsEnabled(data.productsEnabled)
   }
 
   return data
