@@ -28,56 +28,69 @@ export const salesSegmentValues = ['Scale', 'Velocity'] as const
 
 export const currencyCodeValues = ['AUD', 'CAD', 'NZD', 'USD'] as const
 
+/**
+ * Wrap a Zod schema as optional, treating `null` and `""` as "not provided".
+ * Salesforce serializes unset columns / picklists as `null`; a natural
+ * SF-side client emits those nulls verbatim. Without this preprocessing,
+ * Zod's `.optional()` rejects `null` because it only tolerates the key
+ * being absent — not present-but-null.
+ */
+const opt = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    schema.optional()
+  )
+
 export const generateLinkSchema = z.object({
   // Required
   salesforceAccountId: z.string().min(1, 'salesforceAccountId is required'),
   companyId: z.string().min(1, 'companyId is required'),
 
   // Account information
-  companyName: z.string().optional(),
-  primaryContactFirstName: z.string().optional(),
-  primaryContactLastName: z.string().optional(),
-  primaryContactEmail: z.string().email().optional().or(z.literal('')),
-  phone: z.string().optional(),
+  companyName: opt(z.string()),
+  primaryContactFirstName: opt(z.string()),
+  primaryContactLastName: opt(z.string()),
+  primaryContactEmail: opt(z.string().email()),
+  phone: opt(z.string()),
 
   // Contractual details
-  userCount: z.number().optional(),
-  fullUsers: z.number().optional(),
-  dataMigration: z.boolean().optional(),
-  contractedSeats: z.number().optional(),
-  supportType: z.enum(supportTypeValues).optional(),
-  limitedAgents: z.number().optional(),
-  engageContractedSeats: z.number().optional(),
+  userCount: opt(z.number()),
+  fullUsers: opt(z.number()),
+  dataMigration: opt(z.boolean()),
+  contractedSeats: opt(z.number()),
+  supportType: opt(z.enum(supportTypeValues)),
+  limitedAgents: opt(z.number()),
+  engageContractedSeats: opt(z.number()),
 
   // Firmographic data
-  numberOfEmployees: z.enum(numberOfEmployeesValues).optional(),
-  primaryLanguage: z.enum(primaryLanguageValues).optional(),
-  industry: z.string().optional(),
-  industryOther: z.string().optional(),
-  website: z.string().optional(),
-  salesSegment: z.enum(salesSegmentValues).optional(),
+  numberOfEmployees: opt(z.enum(numberOfEmployeesValues)),
+  primaryLanguage: opt(z.enum(primaryLanguageValues)),
+  industry: opt(z.string()),
+  industryOther: opt(z.string()),
+  website: opt(z.string()),
+  salesSegment: opt(z.enum(salesSegmentValues)),
 
   // Pipeline / billing
-  currencyCode: z.enum(currencyCodeValues).optional(),
-  billingStreet: z.string().optional(),
-  billingCity: z.string().optional(),
-  billingState: z.string().optional(),
-  billingPostalCode: z.string().optional(),
-  billingCountry: z.string().optional(),
+  currencyCode: opt(z.enum(currencyCodeValues)),
+  billingStreet: opt(z.string()),
+  billingCity: opt(z.string()),
+  billingState: opt(z.string()),
+  billingPostalCode: opt(z.string()),
+  billingCountry: opt(z.string()),
 
   // Products enabled (flat booleans per Section 3.6 of the integration spec)
-  customerCommunicationEnabled: z.boolean().optional(),
-  quickbooksOnlineEnabled: z.boolean().optional(),
-  quickbooksDesktopEnabled: z.boolean().optional(),
-  fpPaymentsEnabled: z.boolean().optional(),
-  fpPaymentsProvider: z.string().optional(),
-  customFormsEnabled: z.boolean().optional(),
-  engageEnabled: z.boolean().optional(),
+  customerCommunicationEnabled: opt(z.boolean()),
+  quickbooksOnlineEnabled: opt(z.boolean()),
+  quickbooksDesktopEnabled: opt(z.boolean()),
+  fpPaymentsEnabled: opt(z.boolean()),
+  fpPaymentsProvider: opt(z.string()),
+  customFormsEnabled: opt(z.boolean()),
+  engageEnabled: opt(z.boolean()),
 
   // Legacy: original semicolon-delimited products string. Kept for
   // backwards compat. Flat booleans above take precedence when both are
   // provided. Remove once no callers are sending the old shape.
-  productsEnabled: z.string().optional(),
+  productsEnabled: opt(z.string()),
 })
 
 export type GenerateLinkInput = z.infer<typeof generateLinkSchema>

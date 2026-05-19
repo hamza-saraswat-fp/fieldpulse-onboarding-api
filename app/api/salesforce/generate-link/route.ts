@@ -45,6 +45,9 @@ export async function POST(request: Request) {
   const parsed = generateLinkSchema.safeParse(body)
   if (!parsed.success) {
     const fieldErrors = parsed.error.flatten().fieldErrors
+    // warn (not info) so this survives getMinLevel() in production logs.
+    // Logs only the field names + Zod messages — no payload data, so no PII risk.
+    log.warn('Validation failed:', JSON.stringify(fieldErrors))
     return NextResponse.json(
       { error: 'Validation failed', fields: fieldErrors },
       { status: 400 }
