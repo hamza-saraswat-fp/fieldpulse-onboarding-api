@@ -24,7 +24,7 @@ export const generateLinkSchema = z.object({
   website: z.string().optional(),
   currencyCode: z.string().optional(),
   contractedSeats: z.union([z.number(), z.string()]).optional(),
-  dataMigration: z.string().optional(),
+  dataMigration: z.boolean().optional(),
   supportType: z.string().optional(),
   engageContractedSeats: z.union([z.number(), z.string()]).optional(),
   primaryLanguage: z.string().optional(),
