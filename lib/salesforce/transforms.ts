@@ -66,6 +66,7 @@ const STRING_FIELDS = [
   'numberOfEmployees',
   'productsEnabled',
   'fpPaymentsProvider',
+  'founderUserSsoId',
 ] as const
 
 const NUMBER_FIELDS = [

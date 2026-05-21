@@ -52,6 +52,10 @@ export const generateLinkSchema = z.object({
   primaryContactLastName: opt(z.string()),
   primaryContactEmail: opt(z.string().email()),
   phone: opt(z.string()),
+  // FP backend SSO token. Used at Complete-Setup time to authenticate against
+  // POST /v2.5/authorize and obtain a JWT for downstream backend calls.
+  // Treated as an opaque string — no format validation.
+  founderUserSsoId: opt(z.string()),
 
   // Contractual details
   userCount: opt(z.number()),

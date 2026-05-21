@@ -45,31 +45,9 @@ export async function POST(request: Request) {
   const parsed = generateLinkSchema.safeParse(body)
   if (!parsed.success) {
     const fieldErrors = parsed.error.flatten().fieldErrors
-    // Capture the full issues array (with `received` and `options` for enum
-    // failures) so we can diagnose what was actually sent. The fieldErrors
-    // form below loses that — Zod's flatten() collapses to message strings.
-    // Picklist values aren't PII; if a string-content field rejects, we log
-    // its type/code only, not the raw value.
-    const diagnostic = parsed.error.issues.map((issue) => {
-      const path = issue.path.join('.')
-      const base: Record<string, unknown> = { path, code: issue.code, message: issue.message }
-      // Surface received + options for enum mismatches — these are the high-
-      // signal cases for picklist drift. invalid_value is Zod 4's name for
-      // what Zod 3 called invalid_enum_value.
-      if (issue.code === 'invalid_value' || issue.code === 'invalid_enum_value') {
-        const i = issue as unknown as { received?: unknown; options?: unknown }
-        base.received = i.received
-        base.options = i.options
-      }
-      // Surface invalid_type's received type (e.g. "boolean" sent when "string"
-      // was expected). Doesn't leak the value, just the type.
-      if (issue.code === 'invalid_type') {
-        const i = issue as unknown as { received?: unknown }
-        base.received = i.received
-      }
-      return base
-    })
-    log.warn('Validation failed:', JSON.stringify(diagnostic))
+    // warn (not info) so this survives getMinLevel() in production logs.
+    // Logs only the field names + Zod messages — no payload data, so no PII risk.
+    log.warn('Validation failed:', JSON.stringify(fieldErrors))
     return NextResponse.json(
       { error: 'Validation failed', fields: fieldErrors },
       { status: 400 }
