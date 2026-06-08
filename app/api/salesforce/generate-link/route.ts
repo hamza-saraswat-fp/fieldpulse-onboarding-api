@@ -106,6 +106,10 @@ export async function POST(request: Request) {
       company_id: input.companyId,
       access_token: accessToken,
       salesforce_data: salesforceData,
+      // Map the Salesforce-provided SSO id into the dedicated column the wizard
+      // app reads at Complete Setup (POST /authorize { sso_token_id }). Without
+      // this the column stays NULL and Complete Setup throws missing_sso_token_id.
+      sso_token_id: input.founderUserSsoId ?? null,
       custom_forms_enabled: customFormsEnabled,
       status: 'in_progress',
       expires_at: NO_EXPIRATION_SENTINEL,
