@@ -61,9 +61,9 @@ export async function POST(request: Request) {
 
   const { data: existingSession, error: lookupError } = await supabase
     .from('wizard_sessions')
-    .select('id, access_token')
+    .select('id, access_token, status')
     .eq('company_id', input.companyId)
-    .eq('status', 'in_progress')
+    .neq('status', 'expired')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -79,8 +79,27 @@ export async function POST(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   if (existingSession) {
-    const existingLink = `${appUrl}/setup?token=${existingSession.access_token}`
-    log.info('Active session exists for companyId:', input.companyId)
+    let reuseToken = existingSession.access_token
+    if (!reuseToken) {
+      // Pre-QA-36 completed session whose token was nulled on first exchange.
+      // Refresh the token on the SAME row instead of INSERTing a new session, so we
+      // return a working link without re-creating the duplicate-row churn QA-52 is about.
+      reuseToken = crypto.randomUUID()
+      const { error: refreshError } = await supabase
+        .from('wizard_sessions')
+        .update({ access_token: reuseToken })
+        .eq('id', existingSession.id)
+      if (refreshError) {
+        log.error('Failed to refresh access_token for existing session:', refreshError.message)
+        return NextResponse.json(
+          { error: 'Internal server error' },
+          { status: 500 }
+        )
+      }
+      log.info('Refreshed null access_token for existing session:', existingSession.id)
+    }
+    const existingLink = `${appUrl}/setup?token=${reuseToken}`
+    log.info('Reusing existing session for companyId:', input.companyId, 'sessionId:', existingSession.id)
     return NextResponse.json(
       {
         error: 'Active session exists',
