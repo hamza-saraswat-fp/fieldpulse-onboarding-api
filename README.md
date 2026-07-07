@@ -2,14 +2,33 @@
 
 Salesforce-facing API for the FieldPulse onboarding wizard. Stateless service backed by a shared Supabase project. Extracted from the `fieldpulse-onboarding` wizard repo so that the API can be deployed and versioned independently of the UI.
 
+**Part of the FieldPulse onboarding system** — the system-level picture (all components,
+diagrams, data model, environments) lives in the wizard repo:
+[README](https://github.com/jaden-fp/fieldpulse-onboarding#readme) ·
+[docs/architecture.md](https://github.com/jaden-fp/fieldpulse-onboarding/blob/master/docs/architecture.md).
+
+```mermaid
+sequenceDiagram
+    participant SF as Salesforce
+    participant API as this service (Railway)
+    participant DB as Supabase wizard_sessions
+
+    SF->>API: POST /api/salesforce/generate-link<br/>Bearer SALESFORCE_INTEGRATION_KEY
+    API->>DB: existing active session for company_id?
+    alt exists
+        API-->>SF: 409 + same onboardingLink (idempotent)
+    else new
+        API->>DB: INSERT wizard_sessions (access_token,<br/>sso_token_id, salesforce_data, …)
+        API-->>SF: 201 {onboardingLink, sessionId}
+    end
+```
+
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/salesforce/generate-link` | Called by Salesforce on Closed Won (or via manual SF action) to create a wizard session and return a pre-filled onboarding URL. |
-| `POST` | `/api/auth/exchange` | Called by the wizard UI to exchange a URL token for a Supabase JWT scoped to the session's `company_id`. Proxies to the `exchange-token` Supabase Edge Function. |
-
-Full integration spec for Salesforce → API: see `onboarding-app-sf-integration-spec.md` in the wizard repo (`Implementation_app/docs/`).
+| `POST` | `/api/salesforce/generate-link` | Called by Salesforce on Closed Won (or via manual SF action) to create a wizard session and return a pre-filled onboarding URL. Payload includes company details plus `founderUserSsoId` (→ `sso_token_id`, may be a hyphen-joined two-id value) and the custom-forms flag. |
+| `POST` | `/api/auth/exchange` | **Legacy.** Proxies to the `exchange-token` Supabase Edge Function. The wizard app now performs its own exchange via its Next.js route — nothing in the live flow calls this. |
 
 ## Local development
 
@@ -30,7 +49,7 @@ Server runs on `http://localhost:3000`.
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Shared Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Used by `/api/auth/exchange` to call the Edge Function. |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Used by `/api/salesforce/generate-link` to bypass RLS on insert. **Server-only — never expose.** |
-| `NEXT_PUBLIC_APP_URL` | yes | Public URL of the wizard UI (e.g. `https://onboarding.fieldpulse.com`). Used to build the `onboardingLink` returned to SF. Must point to the wizard, NOT this API service. |
+| `NEXT_PUBLIC_APP_URL` | yes | Public URL of the wizard UI (production: `https://fieldpulse-onboarding.vercel.app`). Used to build the `onboardingLink` returned to SF. Must point to the wizard, NOT this API service. |
 
 ## Deployment (Railway)
 
@@ -38,7 +57,7 @@ This service is designed to run on Railway. Setup checklist:
 
 1. **Create a new Railway project** pointed at this GitHub repo.
 2. **Deploy from `main`** (or a `staging` branch for the staging env — one Railway project per env).
-3. **Set the env vars above** in the Railway dashboard. Pull Supabase values from the matching environment's project (staging Supabase for staging API; prod Supabase for prod API).
+3. **Set the env vars above** in the Railway dashboard (use the Raw Editor for bulk edits). Note: there is **one shared Supabase project** (`rqelncbqgepyardwtltc`) across all environments — the Supabase values are the same everywhere; only `SALESFORCE_INTEGRATION_KEY` and `NEXT_PUBLIC_APP_URL` differ per environment.
 4. **Generate `SALESFORCE_INTEGRATION_KEY`** with `openssl rand -hex 32`. Store the value in 1Password. Share with the Salesforce admin via a 1Password share link.
 5. **Smoke-test after deploy:**
 
