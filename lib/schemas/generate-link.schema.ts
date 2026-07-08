@@ -1,8 +1,14 @@
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
+
+const log = logger('generate-link-schema')
 
 // Picklist values from the SF field mapping spec (REV-219).
-// Enums enforce the contract at the boundary so typos / drift fail fast
-// with a clear 400 instead of being silently stored.
+// Required fields fail fast with a clear 400 (see below). The optional
+// display/prefill picklists, however, are wrapped in `lenientEnum`: a
+// drifting value (e.g. a deactivated Salesforce option) is dropped and
+// logged rather than 400ing the whole link, since it never reaches
+// FieldPulse and only prefills the wizard.
 export const numberOfEmployeesValues = [
   '0',
   '1',
@@ -41,6 +47,26 @@ const opt = <T extends z.ZodTypeAny>(schema: T) =>
     schema.optional()
   )
 
+/**
+ * Optional picklist enum that tolerates Salesforce picklist drift.
+ * Known values pass through; `null` / `""` / absent become "not provided";
+ * any unrecognized non-empty value is dropped (and logged) instead of
+ * 400ing the whole request. These are optional display / prefill fields —
+ * a drifting one must not block link generation. Required fields stay
+ * strict (a plain `z.string().min(1)`), so genuinely invalid payloads
+ * still fail fast.
+ */
+const lenientEnum = <T extends readonly [string, ...string[]]>(
+  values: T,
+  field: string
+) =>
+  z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return undefined
+    if ((values as readonly unknown[]).includes(val)) return val
+    log.warn(`dropping unrecognized ${field}:`, JSON.stringify({ received: val }))
+    return undefined
+  }, z.enum(values).optional())
+
 export const generateLinkSchema = z.object({
   // Required
   salesforceAccountId: z.string().min(1, 'salesforceAccountId is required'),
@@ -62,20 +88,20 @@ export const generateLinkSchema = z.object({
   fullUsers: opt(z.number()),
   dataMigration: opt(z.boolean()),
   contractedSeats: opt(z.number()),
-  supportType: opt(z.enum(supportTypeValues)),
+  supportType: lenientEnum(supportTypeValues, 'supportType'),
   limitedAgents: opt(z.number()),
   engageContractedSeats: opt(z.number()),
 
   // Firmographic data
-  numberOfEmployees: opt(z.enum(numberOfEmployeesValues)),
-  primaryLanguage: opt(z.enum(primaryLanguageValues)),
+  numberOfEmployees: lenientEnum(numberOfEmployeesValues, 'numberOfEmployees'),
+  primaryLanguage: lenientEnum(primaryLanguageValues, 'primaryLanguage'),
   industry: opt(z.string()),
   industryOther: opt(z.string()),
   website: opt(z.string()),
-  salesSegment: opt(z.enum(salesSegmentValues)),
+  salesSegment: lenientEnum(salesSegmentValues, 'salesSegment'),
 
   // Pipeline / billing
-  currencyCode: opt(z.enum(currencyCodeValues)),
+  currencyCode: lenientEnum(currencyCodeValues, 'currencyCode'),
   billingStreet: opt(z.string()),
   billingCity: opt(z.string()),
   billingState: opt(z.string()),
